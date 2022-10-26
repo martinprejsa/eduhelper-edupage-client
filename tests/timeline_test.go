@@ -3,11 +3,12 @@ package tests
 import (
 	"eduhelper/edupage"
 	"errors"
+	"os"
 	"testing"
 )
 
 func TestTimeline(t *testing.T) {
-	h, err := edupage.Login("SERVER", "USERNAME", "PASSWORD")
+	h, err := edupage.Login(os.Getenv("EDUPAGE_SERVER"), os.Getenv("EDUPAGE_USERNAME"), os.Getenv("EDUPAGE_PASSWORD"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,12 +23,9 @@ func TestTimeline(t *testing.T) {
 	}
 
 	for _, hw := range ti.Homeworks {
-		if hw.TestID == "429860" {
-			_, err := h.GetHomeworkAttachments(&hw)
-			if err != nil && err != edupage.UnobtainableAttachments {
-				t.Fatal(err)
-			}
+		_, err := h.GetHomeworkAttachments(&hw)
+		if err != nil && err != edupage.UnobtainableAttachments {
+			t.Fatal(err)
 		}
 	}
-
 }

@@ -164,7 +164,7 @@ func (i *TimelineItem) GetAttachments() map[string]string {
 
 func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) {
 	if i.ESuperID == "" || i.TestID == "" {
-		return nil, nil
+		return nil, UnobtainableAttachments
 	}
 
 	data := map[string]string{
