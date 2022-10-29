@@ -12,24 +12,70 @@ import (
 
 type handle struct {
 	Window   *gtk.Window
+	Explorer *gtk.ScrolledWindow
+	Viewer   *gtk.ScrolledWindow
 	ehandle  *edupage.Handle
-	notebook *gtk.Notebook
 	listRows []edupage.TimelineItem
-	message  *gtk.TextView
-	info     *gtk.TextView
 }
 
 func (h *handle) quit() {
+	h.Explorer.Destroy()
+	h.Explorer = nil
+	h.Viewer.Destroy()
+	h.Viewer = nil
+	h.Window.Destroy()
+	h.Window = nil
 	h.ehandle = nil
-	h.notebook = nil
-	h.message = nil
-	h.info = nil
 	gtk.MainQuit()
 }
 
 func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
-	h.notebook.RemovePage(2)
-	h.notebook.SetCurrentPage(0)
+	if child, err := h.Viewer.GetChild(); child != nil && err == nil {
+		child.ToWidget().Destroy()
+	}
+
+	message, err := gtk.TextViewNew()
+	if err != nil {
+		return
+	}
+
+	message.SetWrapMode(gtk.WRAP_CHAR)
+	message.SetJustification(gtk.JUSTIFY_LEFT)
+	message.SetEditable(false)
+	message.SetCanFocus(false)
+
+	info, err := gtk.TextViewNew()
+	if err != nil {
+		return
+	}
+
+	info.SetWrapMode(gtk.WRAP_CHAR)
+	info.SetJustification(gtk.JUSTIFY_LEFT)
+	info.SetEditable(false)
+	info.SetCanFocus(false)
+
+	ntb, err := gtk.NotebookNew()
+	if err != nil {
+		return
+	}
+
+	messageLabel, err := gtk.LabelNew("Message")
+	if err != nil {
+		return
+	}
+
+	ntb.AppendPage(message, messageLabel)
+
+	infoLabel, err := gtk.LabelNew("Info")
+	if err != nil {
+		return
+	}
+
+	ntb.AppendPage(info, infoLabel)
+	h.Viewer.Add(ntb)
+
+	/** FILLING **/
+
 	name, err := row.GetName()
 	if err != nil {
 		return
@@ -67,7 +113,7 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 			"Sent to: " + ctx.UserName + "\n" +
 			"Created at: " + ctx.TimeAdded.Format(edupage.TimeFormat) + "\n",
 	)
-	h.info.SetBuffer(infoBuffer)
+	info.SetBuffer(infoBuffer)
 
 	var attachments map[string]string
 	if ctx.Type == edupage.TimelineMessage {
@@ -107,8 +153,7 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 		}
 
 		attachmentList.SetActivateOnSingleClick(false)
-
-		h.notebook.AppendPage(attachmentList, attachmentsLabel)
+		ntb.AppendPage(attachmentList, attachmentsLabel)
 
 		for key, val := range attachments {
 			btn, err := gtk.ButtonNewWithLabel(key)
@@ -126,11 +171,12 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 
 			row.Add(btn)
 			attachmentList.Add(row)
+
 			index++
 		}
 	}
 
-	h.message.SetBuffer(messageBuffer)
+	message.SetBuffer(messageBuffer)
 	h.Window.ShowAll()
 	return
 }

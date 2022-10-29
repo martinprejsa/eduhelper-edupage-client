@@ -158,7 +158,7 @@ func (t *Timeline) FindHomework(superid string) (Homework, error) {
 	return Homework{}, errors.New("homework not found")
 }
 
-func (i *TimelineItem) IsHomework() bool {
+func (i *TimelineItem) IsHomeworkWithAttachments() bool {
 	if i.Type == TimelineHomework {
 		if superid, ok := i.Data.Value["superid"]; ok && superid != nil && reflect.TypeOf(superid).Kind() == reflect.String {
 			if etc, ok := i.Data.Value["etestCards"]; ok && etc != nil && etc.(float64) == 1 {

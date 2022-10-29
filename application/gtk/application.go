@@ -2,9 +2,12 @@ package gtk
 
 import (
 	"eduhelper/edupage"
+	"eduhelper/utils"
+	"errors"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -52,62 +55,31 @@ func (h *handle) mainPage() error {
 		return err
 	}
 
-	ha, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
-	va, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
+	eha, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
+	eva, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
 
-	window, err := gtk.ScrolledWindowNew(ha, va)
+	explorer, err := gtk.ScrolledWindowNew(eha, eva)
 	if err != nil {
 		return err
 	}
 
-	window.SetPolicy(gtk.POLICY_NEVER, gtk.POLICY_EXTERNAL)
-	window.Add(list)
+	explorer.SetPolicy(gtk.POLICY_NEVER, gtk.POLICY_EXTERNAL)
+	explorer.Add(list)
 
-	message, err := gtk.TextViewNew()
+	vha, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
+	vva, _ := gtk.AdjustmentNew(float64(1), float64(1), float64(1), float64(1), float64(1), float64(1))
+
+	viewer, err := gtk.ScrolledWindowNew(vha, vva)
 	if err != nil {
 		return err
 	}
 
-	message.SetWrapMode(gtk.WRAP_CHAR) //FIX resize
-	message.SetJustification(gtk.JUSTIFY_LEFT)
-	message.SetEditable(false)
-	message.SetCanFocus(false)
-	h.message = message
+	viewer.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 
-	info, err := gtk.TextViewNew()
-	if err != nil {
-		return err
-	}
-
-	info.SetWrapMode(gtk.WRAP_CHAR) //FIX resize
-	info.SetJustification(gtk.JUSTIFY_LEFT)
-	info.SetEditable(false)
-	info.SetCanFocus(false)
-	h.info = info
-
-	ntb, err := gtk.NotebookNew()
-	if err != nil {
-		return err
-	}
-
-	messageLabel, err := gtk.LabelNew("Message")
-	if err != nil {
-		return err
-	}
-
-	ntb.AppendPage(message, messageLabel)
-
-	infoLabel, err := gtk.LabelNew("Info")
-	if err != nil {
-		return err
-	}
-
-	ntb.AppendPage(info, infoLabel)
-
-	h.notebook = ntb
-
-	grid.Attach(window, 0, 0, 1, 1)
-	grid.Attach(ntb, 1, 0, 3, 1)
+	grid.Attach(explorer, 0, 0, 1, 1)
+	h.Explorer = explorer
+	grid.Attach(viewer, 1, 0, 3, 1)
+	h.Viewer = viewer
 
 	grid.SetColumnHomogeneous(true)
 	grid.SetRowHomogeneous(true)
@@ -120,7 +92,7 @@ func (h *handle) mainPage() error {
 
 	items := tm.SortedTimelineItems(func(item edupage.TimelineItem) bool {
 		return item.Type == edupage.TimelineMessage ||
-			(item.Type == edupage.TimelineHomework && item.IsHomework())
+			(item.Type == edupage.TimelineHomework && item.IsHomeworkWithAttachments())
 	})
 
 	h.listRows = items
@@ -128,19 +100,21 @@ func (h *handle) mainPage() error {
 
 	for i, item := range items {
 		var preview string
+		if item.Type == edupage.TimelineHomework {
+			preview = item.Data.Value["nazov"].(string)
+		}
+
 		if item.Type == edupage.TimelineMessage {
-			if len(item.Text) > 20 {
-				preview = string([]rune(item.Text)[0:20])
-				i := strings.Index(preview, "\n")
-				if i != -1 {
-					preview = preview[0:i]
-				}
-				preview += "..."
-			} else {
-				preview = item.Text
+			preview = item.Text
+		}
+
+		if len(preview) > 20 {
+			preview = preview[0:20]
+			i := strings.Index(preview, "\n")
+			if i != -1 {
+				preview = preview[0:i]
 			}
-		} else if item.Type == edupage.TimelineHomework {
-			preview = "Homework"
+			preview += "..."
 		}
 
 		rowBox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 1)
@@ -186,6 +160,7 @@ func (h *handle) mainPage() error {
 }
 
 func (h *handle) loginPage() error {
+	_ = os.MkdirAll(utils.GetRootDir(), os.FileMode(0700)) //TODO: log
 	grid, err := gtk.GridNew()
 	if err != nil {
 		return err
@@ -248,6 +223,38 @@ func (h *handle) loginPage() error {
 	if err != nil {
 		return err
 	}
+
+	quitB, err := gtk.ButtonNewWithLabel("Quit")
+	quitB.Connect("button-press-event", func(*gtk.Button, *gdk.Event) {
+		h.quit()
+	})
+	if err != nil {
+		return err
+	}
+
+	rememberCheckbox, err := gtk.CheckButtonNewWithLabel("Remember credentials (unsafe)")
+	if err != nil {
+		return err
+	}
+
+	saved := false
+	server, username, password, err := loadCredentials()
+	if err == nil {
+		serverE.SetText(server)
+		usernameE.SetText(username)
+		passwordE.SetText(password)
+		rememberCheckbox.SetActive(true)
+		saved = true
+	}
+
+	h.Window.Connect("key-pressed", func(g *gtk.Window, event *gdk.EventKey) {
+		if event.KeyVal() == gdk.KEY_Escape {
+			quitB.Clicked()
+		} else if event.KeyVal() == gdk.KEY_ISO_Enter {
+			loginB.Clicked()
+		}
+	})
+
 	loginB.Connect("button-press-event", func(*gtk.Button, *gdk.Event) {
 		username, _ := usernameE.GetText()
 		password, _ := passwordE.GetText()
@@ -256,12 +263,20 @@ func (h *handle) loginPage() error {
 		e, err := edupage.Login(server, username, password)
 		if err != nil {
 			if err == edupage.AuthorizationError {
-				label.SetText("Invalid password")
+				label.SetText("Invalid credentials")
 				passwordE.SetText("")
 			} else {
 				label.SetText("Error: " + err.Error())
 			}
 		} else {
+			if !saved && rememberCheckbox.GetActive() {
+				_ = saveCredentials(server, username, password) //TODO: log
+			}
+
+			if !rememberCheckbox.GetActive() {
+				_ = os.Remove(utils.GetCredentialsFilePath()) //TODO: log
+			}
+
 			label.SetText("Success")
 			h.ehandle = &e
 			h.Window.Remove(grid)
@@ -273,14 +288,6 @@ func (h *handle) loginPage() error {
 		}
 
 	})
-
-	quitB, err := gtk.ButtonNewWithLabel("Quit")
-	quitB.Connect("button-press-event", func(*gtk.Button, *gdk.Event) {
-		h.quit()
-	})
-	if err != nil {
-		return err
-	}
 
 	grid.SetRowSpacing(5)
 	grid.SetColumnSpacing(10)
@@ -300,14 +307,52 @@ func (h *handle) loginPage() error {
 	subgrid, err := gtk.GridNew()
 	subgrid.Attach(quitB, 0, 0, 1, 1)
 	subgrid.Attach(loginB, 1, 0, 1, 1)
+
 	subgrid.SetColumnSpacing(25)
 	subgrid.SetColumnHomogeneous(true)
 
-	grid.Attach(subgrid, 0, 5, 2, 1)
+	grid.Attach(rememberCheckbox, 0, 5, 2, 1)
+	grid.Attach(subgrid, 0, 6, 2, 1)
 
 	h.Window.Add(grid)
 
 	return nil
+}
+
+// TODO write test
+func saveCredentials(server, username, password string) error {
+	var escape = func(input string) string {
+		return strings.ReplaceAll(input, ":", "\\:")
+	}
+	str := escape(server) + ":" + escape(username) + ":" + escape(password)
+	err := os.WriteFile(utils.GetCredentialsFilePath(), []byte(str), os.FileMode(0700))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// TODO write test
+// server, username, password
+func loadCredentials() (string, string, string, error) {
+	data, err := os.ReadFile(utils.GetCredentialsFilePath())
+	if err != nil {
+		return "", "", "", err
+	}
+	if len(data) == 0 {
+		return "", "", "", errors.New("no credentials present")
+	}
+
+	str := string(data)
+	items := strings.Split(str, ":")
+	for _, item := range items {
+		item = strings.ReplaceAll(item, "\\:", ":")
+	}
+	if len(items) != 3 {
+		return "", "", "", errors.New("invalid credentials")
+	}
+
+	return items[0], items[1], items[2], nil
 }
 
 func applyStyle(e *gtk.Widget, class string) error {
