@@ -10,8 +10,7 @@ I'll probably continue expanding this project.
 ### Support
 Currently supported functions:
 - Timeline messages (content, attachments)
-
-
+- Homeworks (attachments)
 
 ### Screenshots
 
