@@ -119,7 +119,8 @@ func (h *handle) mainPage() error {
 	}
 
 	items := tm.SortedTimelineItems(func(item edupage.TimelineItem) bool {
-		return item.Type == edupage.TimelineMessage
+		return item.Type == edupage.TimelineMessage ||
+			(item.Type == edupage.TimelineHomework && item.IsHomework())
 	})
 
 	h.listRows = items
@@ -127,15 +128,19 @@ func (h *handle) mainPage() error {
 
 	for i, item := range items {
 		var preview string
-		if len(item.Text) > 20 {
-			preview = string([]rune(item.Text)[0:20])
-			i := strings.Index(preview, "\n")
-			if i != -1 {
-				preview = preview[0:i]
+		if item.Type == edupage.TimelineMessage {
+			if len(item.Text) > 20 {
+				preview = string([]rune(item.Text)[0:20])
+				i := strings.Index(preview, "\n")
+				if i != -1 {
+					preview = preview[0:i]
+				}
+				preview += "..."
+			} else {
+				preview = item.Text
 			}
-			preview += "..."
-		} else {
-			preview = item.Text
+		} else if item.Type == edupage.TimelineHomework {
+			preview = "Homework"
 		}
 
 		rowBox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 1)

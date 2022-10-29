@@ -21,11 +21,4 @@ func TestTimeline(t *testing.T) {
 	if len(ti.TimelineItems) == 0 {
 		t.Fatal(errors.New("no timeline items"))
 	}
-
-	for _, hw := range ti.Homeworks {
-		_, err := h.GetHomeworkAttachments(&hw)
-		if err != nil && err != edupage.UnobtainableAttachments {
-			t.Fatal(err)
-		}
-	}
 }

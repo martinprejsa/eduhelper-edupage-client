@@ -2,6 +2,7 @@ package gtk
 
 import (
 	"eduhelper/edupage"
+	"fmt"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/pkg/browser"
@@ -21,7 +22,6 @@ type handle struct {
 func (h *handle) quit() {
 	h.ehandle = nil
 	h.notebook = nil
-	h.message = nil
 	h.message = nil
 	h.info = nil
 	gtk.MainQuit()
@@ -50,14 +50,6 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 		return
 	}
 
-	text := h.listRows[index].Text
-	if h.listRows[index].Data.Value["receipt"] == "1" {
-		text += "\n\n"
-		text += h.listRows[index].Data.Value["messageContent"].(string)
-	}
-	messageBuffer.SetText(text)
-	h.message.SetBuffer(messageBuffer)
-
 	itb, err := gtk.TextTagTableNew()
 	if err != nil {
 		return
@@ -68,14 +60,40 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 		return
 	}
 
+	ctx := h.listRows[index]
+
 	infoBuffer.SetText(
-		"Author: " + h.listRows[index].OwnerName + "\n" +
-			"Sent to: " + h.listRows[index].UserName + "\n" +
-			"Created at: " + h.listRows[index].TimeAdded.Format(edupage.TimeFormat) + "\n",
+		"Author: " + ctx.OwnerName + "\n" +
+			"Sent to: " + ctx.UserName + "\n" +
+			"Created at: " + ctx.TimeAdded.Format(edupage.TimeFormat) + "\n",
 	)
 	h.info.SetBuffer(infoBuffer)
 
-	attachments := h.listRows[index].GetAttachments()
+	var attachments map[string]string
+	if ctx.Type == edupage.TimelineMessage {
+		text := ctx.Text
+		if ctx.Data.Value["receipt"] == "1" {
+			text += "\n\n"
+			text += ctx.Data.Value["messageContent"].(string)
+		}
+
+		messageBuffer.SetText(text)
+
+		attachments, err = ctx.GetAttachments()
+	} else if ctx.Type == edupage.TimelineHomework {
+		hw, err := ctx.ToHomework()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		attachments, err = h.ehandle.FetchHomeworkAttachments(&hw)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		text := ctx.Data.Value["nazov"].(string)
+		messageBuffer.SetText(text)
+	}
 
 	if len(attachments) != 0 {
 		attachmentsLabel, err := gtk.LabelNew("Attachments")
@@ -108,8 +126,11 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 
 			row.Add(btn)
 			attachmentList.Add(row)
-			h.Window.ShowAll()
 			index++
 		}
 	}
+
+	h.message.SetBuffer(messageBuffer)
+	h.Window.ShowAll()
+	return
 }

@@ -16,10 +16,17 @@ import (
 var (
 	timelinePath            = "timeline/"
 	TimeFormat              = "2006-01-02 15:04:05"
-	UnobtainableAttachments = errors.New("homework contains no attachments")
+	UnobtainableAttachments = errors.New("couldn't obtain attachments")
 )
 
+type Timeline struct {
+	Raw           map[string]interface{}
+	Homeworks     []Homework     `json:"homeworks"`
+	TimelineItems []TimelineItem `json:"timelineItems"`
+}
+
 type TimelineItem struct {
+	Timeline        *Timeline
 	TimelineID      string       `json:"timelineid"`
 	Timestamp       Time         `json:"timestamp"`
 	ReactionTo      string       `json:"reakcia_na"`
@@ -83,12 +90,6 @@ type Homework struct {
 	LessonName        string       `json:"predmet_meno"`
 }
 
-type Timeline struct {
-	Raw           map[string]interface{}
-	Homeworks     []Homework     `json:"homeworks"`
-	TimelineItems []TimelineItem `json:"timelineItems"`
-}
-
 func (h *Handle) GetTimeline() (Timeline, error) {
 	url := fmt.Sprintf("https://%s/%s", Server, timelinePath)
 	rs, err := h.hc.Get(url)
@@ -135,6 +136,7 @@ func (t *Timeline) SortedTimelineItems(predicate func(TimelineItem) bool) []Time
 	if predicate != nil {
 		for _, item := range t.TimelineItems {
 			if predicate(item) {
+				item.Timeline = t
 				a = append(a, item)
 			}
 		}
@@ -147,24 +149,59 @@ func (t *Timeline) SortedTimelineItems(predicate func(TimelineItem) bool) []Time
 	})
 	return a
 }
+func (t *Timeline) FindHomework(superid string) (Homework, error) {
+	for _, homework := range t.Homeworks {
+		if homework.ESuperID == superid {
+			return homework, nil
+		}
+	}
+	return Homework{}, errors.New("homework not found")
+}
 
-func (i *TimelineItem) GetAttachments() map[string]string {
-	var attachments = make(map[string]string)
-	data := i.Data
-	if val, ok := data.Value["attachements"]; ok { // It's misspelled in the JSON payload
-		if reflect.TypeOf(val).Kind() == reflect.Map {
-			a := val.(map[string]interface{})
-			for k, v := range a {
-				attachments[v.(string)] = k
+func (i *TimelineItem) IsHomework() bool {
+	if i.Type == TimelineHomework {
+		if superid, ok := i.Data.Value["superid"]; ok && superid != nil && reflect.TypeOf(superid).Kind() == reflect.String {
+			if etc, ok := i.Data.Value["etestCards"]; ok && etc != nil && etc.(float64) == 1 {
+				return true
 			}
 		}
 	}
-	return attachments
+
+	return false
 }
 
-func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) {
+func (i *TimelineItem) ToHomework() (Homework, error) {
+	if i.Type == TimelineHomework {
+		if superid, ok := i.Data.Value["superid"]; ok && superid != nil && reflect.TypeOf(superid).Kind() == reflect.String {
+			if etc, ok := i.Data.Value["etestCards"]; ok && etc != nil && etc.(float64) == 1 {
+				return i.Timeline.FindHomework(superid.(string))
+			}
+		}
+	}
+
+	return Homework{}, errors.New("not a homework")
+}
+
+func (i *TimelineItem) GetAttachments() (map[string]string, error) {
+	if i.Type == TimelineMessage {
+		var attachments = make(map[string]string)
+		data := i.Data
+		if val, ok := data.Value["attachements"]; ok { // It's misspelled in the JSON payload
+			if reflect.TypeOf(val).Kind() == reflect.Map {
+				a := val.(map[string]interface{})
+				for k, v := range a {
+					attachments[v.(string)] = k
+				}
+			}
+		}
+		return attachments, nil
+	}
+	return nil, UnobtainableAttachments
+}
+
+func (h *Handle) FetchHomeworkAttachments(i *Homework) (map[string]string, error) {
 	if i.ESuperID == "" || i.TestID == "" {
-		return nil, UnobtainableAttachments
+		return nil, errors.New("required fields superid and testid not set")
 	}
 
 	data := map[string]string{
@@ -174,7 +211,7 @@ func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) 
 
 	payload, err := CreatePayload(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create payload: %w", err)
 	}
 
 	resp, err := h.hc.PostForm(
@@ -182,13 +219,13 @@ func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) 
 		payload,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("homework request failed: %w", err)
 	}
 
 	response, err := io.ReadAll(resp.Body)
 
 	if len(response) < 5 {
-		return nil, nil
+		return nil, fmt.Errorf("homework request failed, bad response: %w", err)
 	}
 
 	response = response[4:len(response)]
@@ -196,34 +233,37 @@ func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) 
 	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(response)))
 	_, err = base64.StdEncoding.Decode(decoded, response)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("homework request failed, bad response: %w", err)
 	}
 
 	decoded = bytes.Trim(decoded, "\x00")
 	var object map[string]interface{}
 	err = json.Unmarshal(decoded, &object)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("homework request failed, bad response: %w", err)
 	}
 
 	attachments := make(map[string]string)
 
 	// God help those who may try to debug this.
 	if object["materialData"] == nil ||
-		(reflect.TypeOf(object["materialData"]).Kind() != reflect.Map || reflect.TypeOf(object["materialData"]).Elem().Kind() != reflect.Interface) {
+		(reflect.TypeOf(object["materialData"]).Kind() != reflect.Map ||
+			reflect.TypeOf(object["materialData"]).Elem().Kind() != reflect.Interface) {
 		return nil, UnobtainableAttachments
 	}
 	materialData := object["materialData"].(map[string]interface{})
 
 	if materialData["cardsData"] == nil ||
-		(reflect.TypeOf(materialData["cardsData"]).Kind() != reflect.Map || reflect.TypeOf(materialData["cardsData"]).Elem().Kind() != reflect.Interface) {
+		(reflect.TypeOf(materialData["cardsData"]).Kind() != reflect.Map ||
+			reflect.TypeOf(materialData["cardsData"]).Elem().Kind() != reflect.Interface) {
 		return nil, UnobtainableAttachments
 	}
 	cardsData := materialData["cardsData"].(map[string]interface{})
 
 	for _, entry := range cardsData {
 		if entry == nil ||
-			(reflect.TypeOf(entry).Kind() != reflect.Map || reflect.TypeOf(entry).Elem().Kind() != reflect.Interface) {
+			(reflect.TypeOf(entry).Kind() != reflect.Map ||
+				reflect.TypeOf(entry).Elem().Kind() != reflect.Interface) {
 			return nil, UnobtainableAttachments
 		}
 
@@ -239,25 +279,29 @@ func (h *Handle) GetHomeworkAttachments(i *Homework) (map[string]string, error) 
 		}
 
 		if content["widgets"] == nil ||
-			(reflect.TypeOf(content["widgets"]).Kind() != reflect.Slice || reflect.TypeOf(content["widgets"]).Elem().Kind() != reflect.Interface) {
+			(reflect.TypeOf(content["widgets"]).Kind() != reflect.Slice ||
+				reflect.TypeOf(content["widgets"]).Elem().Kind() != reflect.Interface) {
 			return nil, UnobtainableAttachments
 		}
 
 		widgets := content["widgets"].([]interface{})
 		for _, widget := range widgets {
 			if widget == nil ||
-				(reflect.TypeOf(widget).Kind() != reflect.Map || reflect.TypeOf(widget).Elem().Kind() != reflect.Interface) {
+				(reflect.TypeOf(widget).Kind() != reflect.Map ||
+					reflect.TypeOf(widget).Elem().Kind() != reflect.Interface) {
 				return nil, UnobtainableAttachments
 			}
 			if widget.(map[string]interface{})["props"] == nil ||
-				(reflect.TypeOf(widget.(map[string]interface{})["props"]).Kind() != reflect.Map || reflect.TypeOf(widget.(map[string]interface{})["props"]).Elem().Kind() != reflect.Interface) {
+				(reflect.TypeOf(widget.(map[string]interface{})["props"]).Kind() != reflect.Map ||
+					reflect.TypeOf(widget.(map[string]interface{})["props"]).Elem().Kind() != reflect.Interface) {
 				return nil, UnobtainableAttachments
 			}
 			props := widget.(map[string]interface{})["props"].(map[string]interface{})
 			if files, ok := props["files"]; ok {
 				for _, file := range files.([]interface{}) {
 					if file == nil ||
-						(reflect.TypeOf(file).Kind() != reflect.Map || reflect.TypeOf(file).Elem().Kind() != reflect.Interface) {
+						(reflect.TypeOf(file).Kind() != reflect.Map ||
+							reflect.TypeOf(file).Elem().Kind() != reflect.Interface) {
 						return nil, UnobtainableAttachments
 					}
 					attachments[file.(map[string]interface{})["name"].(string)] = file.(map[string]interface{})["src"].(string)
