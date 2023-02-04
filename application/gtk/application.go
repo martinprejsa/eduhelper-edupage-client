@@ -25,7 +25,7 @@ func Start() {
 
 	win.SetTitle("Eduhelper")
 	win.Connect("destroy", func() {
-		h.quit()
+		gtk.MainQuit()
 	})
 
 	err = h.loginPage()
@@ -142,7 +142,6 @@ func (h *handle) mainPage() error {
 		}
 
 		rowBox.PackStart(sep, true, true, 0)
-
 		row, err := gtk.ListBoxRowNew()
 		if err != nil {
 			return err
@@ -226,7 +225,7 @@ func (h *handle) loginPage() error {
 
 	quitB, err := gtk.ButtonNewWithLabel("Quit")
 	quitB.Connect("button-press-event", func(*gtk.Button, *gdk.Event) {
-		h.quit()
+		gtk.MainQuit()
 	})
 	if err != nil {
 		return err

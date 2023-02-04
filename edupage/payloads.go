@@ -27,6 +27,7 @@ func CreatePayload(payload map[string]string) (url.Values, error) {
 	for key, val := range payload {
 		data.Add(key, val)
 	}
+
 	es := data.Encode()
 	e := make([]byte, base64.URLEncoding.EncodedLen(len(es)))
 	base64.URLEncoding.Encode(e, []byte(es))
@@ -34,10 +35,10 @@ func CreatePayload(payload map[string]string) (url.Values, error) {
 	r := url.Values{}
 	r.Add("eqap", string(e))
 
-	h := sha1.New()
-	h.Reset()
-	h.Write(e)
-	r.Add("eqacs", base64.URLEncoding.EncodeToString(h.Sum(nil)))
+	hasher := sha1.New()
+	hasher.Reset()
+	hasher.Write(e)
+	r.Add("eqacs", base64.URLEncoding.EncodeToString(hasher.Sum(nil)))
 
 	r.Add("eqaz", "1")
 	return r, nil

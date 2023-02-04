@@ -18,17 +18,6 @@ type handle struct {
 	listRows []edupage.TimelineItem
 }
 
-func (h *handle) quit() {
-	h.Explorer.Destroy()
-	h.Explorer = nil
-	h.Viewer.Destroy()
-	h.Viewer = nil
-	h.Window.Destroy()
-	h.Window = nil
-	h.ehandle = nil
-	gtk.MainQuit()
-}
-
 func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 	if child, err := h.Viewer.GetChild(); child != nil && err == nil {
 		child.ToWidget().Destroy()
@@ -154,7 +143,6 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 
 		attachmentList.SetActivateOnSingleClick(false)
 		ntb.AppendPage(attachmentList, attachmentsLabel)
-
 		for key, val := range attachments {
 			btn, err := gtk.ButtonNewWithLabel(key)
 			if err != nil {
@@ -165,10 +153,11 @@ func (h *handle) rowSelect(_ *gtk.ListBox, row *gtk.ListBoxRow) {
 				_ = browser.OpenURL("https://" + path.Join(edupage.Server, val)) //TODO LOG
 			})
 			row, err := gtk.ListBoxRowNew()
+			row.SetActivatable(false)
+			row.SetSelectable(false)
 			if err != nil {
 				return
 			}
-
 			row.Add(btn)
 			attachmentList.Add(row)
 
