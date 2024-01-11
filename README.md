@@ -5,8 +5,6 @@ Provides user interface, that interacts with the [Edupage](https://www.edupage.o
 
 Tested on `Arch Linux x86_64 6.0.2-arch1-1` with `KDE Plasma` desktop environment.
 
-**This is a proof of concept.** I'll probably continue expanding it.
-
 ### Support
 Currently supported functions:
 - Timeline messages (content, attachments)
